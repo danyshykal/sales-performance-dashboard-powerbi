@@ -1,0 +1,99 @@
+// PART B: Targets, Ranking, Labels. Create the 'Target Growth' what-if parameter FIRST
+// Paste into DAX query view → Run → click "Update model with changes"
+DEFINE
+    MEASURE '_Measures'[Sales Target] =
+        SUMX (
+            VALUES ( DimDate[MonthStart] ),
+            VAR _m = DimDate[MonthStart]
+            VAR _base =
+                CALCULATE ( [Revenue], DATESINPERIOD ( DimDate[Date], _m - 1, -3, MONTH ) ) / 3
+            RETURN
+                IF ( _m >= DATE ( 2017, 4, 1 ), _base * ( 1 + [Target Growth Value] ) )
+        )
+
+    MEASURE '_Measures'[Revenue (Targeted Months)] =
+        SUMX (
+            VALUES ( DimDate[MonthStart] ),
+            IF ( DimDate[MonthStart] >= DATE ( 2017, 4, 1 ), [Revenue] )
+        )
+
+    MEASURE '_Measures'[Target Achievement %] =
+        DIVIDE ( [Revenue (Targeted Months)], [Sales Target] )
+
+    MEASURE '_Measures'[Target Variance] =
+        [Revenue (Targeted Months)] - [Sales Target]
+
+    MEASURE '_Measures'[Months Target Hit] =
+        SUMX (
+            VALUES ( DimDate[MonthStart] ),
+            IF ( NOT ISBLANK ( [Sales Target] ) && [Revenue] >= [Sales Target], 1, 0 )
+        )
+
+    MEASURE '_Measures'[Months With Target] =
+        SUMX ( VALUES ( DimDate[MonthStart] ), IF ( NOT ISBLANK ( [Sales Target] ), 1, 0 ) )
+
+    MEASURE '_Measures'[KPI Status Colour] =
+        SWITCH (
+            TRUE (),
+            ISBLANK ( [Target Achievement %] ), BLANK (),
+            [Target Achievement %] >= 1, "#2E7D32",
+            [Target Achievement %] >= 0.9, "#F9A825",
+            "#C62828"
+        )
+
+    MEASURE '_Measures'[KPI Status] =
+        SWITCH (
+            TRUE (),
+            ISBLANK ( [Target Achievement %] ), BLANK (),
+            [Target Achievement %] >= 1, "▲ On target",
+            [Target Achievement %] >= 0.9, "● Near target",
+            "▼ Behind target"
+        )
+
+    MEASURE '_Measures'[Seller Rank] =
+        IF (
+            HASONEVALUE ( DimSeller[SellerCode] ),
+            RANKX ( ALLSELECTED ( DimSeller[SellerCode] ), [Revenue], , DESC, DENSE )
+        )
+
+    MEASURE '_Measures'[Category Rank] =
+        IF (
+            HASONEVALUE ( DimProduct[Category] ),
+            RANKX ( ALLSELECTED ( DimProduct[Category] ), [Revenue], , DESC, DENSE )
+        )
+
+    MEASURE '_Measures'[% of Total Revenue] =
+        DIVIDE ( [Revenue], CALCULATE ( [Revenue], ALLSELECTED () ) )
+
+    MEASURE '_Measures'[Top 20% Seller Revenue Share] =
+        VAR _sellers =
+            ADDCOLUMNS ( VALUES ( DimSeller[seller_id] ), "@rev", [Revenue] )
+        VAR _active = FILTER ( _sellers, NOT ISBLANK ( [@rev] ) )
+        VAR _topN = ROUNDUP ( COUNTROWS ( _active ) * 0.2, 0 )
+        VAR _top = TOPN ( _topN, _active, [@rev], DESC )
+        RETURN
+            DIVIDE ( SUMX ( _top, [@rev] ), SUMX ( _active, [@rev] ) )
+
+    MEASURE '_Measures'[Title Overview] =
+        "Olist Sales Performance — "
+            & IF ( HASONEVALUE ( DimDate[Year] ), VALUES ( DimDate[Year] ), "Jan 2017 – Aug 2018" )
+            & IF ( HASONEVALUE ( DimState[Region] ), " | " & VALUES ( DimState[Region] ), "" )
+
+    MEASURE '_Measures'[Subtitle YoY] =
+        VAR _y = [Revenue YoY %]
+        RETURN
+            IF (
+                ISBLANK ( _y ),
+                "No prior-year data",
+                IF ( _y >= 0, "▲ ", "▼ " ) & FORMAT ( ABS ( _y ), "0.0%" ) & " revenue vs same period last year"
+            )
+EVALUATE
+    SUMMARIZECOLUMNS (
+        DimDate[Year],
+        "Revenue", [Revenue],
+        "Target", [Sales Target],
+        "Achievement %", [Target Achievement %],
+        "Months Hit", [Months Target Hit],
+        "Months With Target", [Months With Target],
+        "Title", [Title Overview]
+    )
