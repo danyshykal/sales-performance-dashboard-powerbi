@@ -1,0 +1,325 @@
+// =====================================================================
+//  Sales Performance Dashboard (Olist) — DAX
+//  Put all measures in a blank table "_Measures" (Home → Enter Data).
+//  Display folders shown in [ ].  Currency = BRL (R$).
+// =====================================================================
+
+
+// ---------------------------------------------------------------------
+//  0. DATE TABLE  (Modeling → New table)
+//     Then: Mark as date table → Date.  Sort Month by MonthNo,
+//     MonthYear by MonthStart.
+// ---------------------------------------------------------------------
+DimDate =
+ADDCOLUMNS (
+    CALENDAR ( DATE ( 2017, 1, 1 ), DATE ( 2018, 8, 31 ) ),
+    "Year", YEAR ( [Date] ),
+    "Quarter", "Q" & QUARTER ( [Date] ),
+    "MonthNo", MONTH ( [Date] ),
+    "Month", FORMAT ( [Date], "MMM" ),
+    "MonthYear", FORMAT ( [Date], "MMM YYYY" ),
+    "MonthStart", DATE ( YEAR ( [Date] ), MONTH ( [Date] ), 1 ),
+    "DayName", FORMAT ( [Date], "ddd" ),
+    "WeekdayNo", WEEKDAY ( [Date], 2 ),
+    "IsWeekend", WEEKDAY ( [Date], 2 ) > 5
+)
+
+
+// ---------------------------------------------------------------------
+//  1. SALES   [1 Sales]
+// ---------------------------------------------------------------------
+Revenue =
+SUM ( FactOrderItems[price] )
+
+Freight Revenue =
+SUM ( FactOrderItems[freight_value] )
+
+Freight % of Revenue =
+DIVIDE ( [Freight Revenue], [Revenue] )
+
+Total Orders =
+DISTINCTCOUNT ( FactOrderItems[order_id] )
+
+Items Sold =
+COUNTROWS ( FactOrderItems )
+
+Avg Order Value =
+DIVIDE ( [Revenue], [Total Orders] )
+
+Items per Order =
+DIVIDE ( [Items Sold], [Total Orders] )
+
+Avg Item Price =
+DIVIDE ( [Revenue], [Items Sold] )
+
+
+// ---------------------------------------------------------------------
+//  2. CUSTOMERS & SELLERS   [2 Customers]
+// ---------------------------------------------------------------------
+Active Customers =
+DISTINCTCOUNT ( FactOrderItems[customer_unique_id] )
+
+Revenue per Customer =
+DIVIDE ( [Revenue], [Active Customers] )
+
+Repeat Customer Rate % =
+VAR _cust =
+    ADDCOLUMNS (
+        VALUES ( FactOrderItems[customer_unique_id] ),
+        "@orders", CALCULATE ( DISTINCTCOUNT ( FactOrderItems[order_id] ) )
+    )
+RETURN
+    DIVIDE ( COUNTROWS ( FILTER ( _cust, [@orders] > 1 ) ), COUNTROWS ( _cust ) )
+
+Active Sellers =
+DISTINCTCOUNT ( FactOrderItems[seller_id] )
+
+Revenue per Seller =
+DIVIDE ( [Revenue], [Active Sellers] )
+
+
+// ---------------------------------------------------------------------
+//  3. CUSTOMER EXPERIENCE & OPERATIONS   [3 Ops]
+//  Order-level values are repeated on every item row, so we average
+//  per order (VALUES order_id) — not per item — to avoid weighting
+//  multi-item orders more.
+// ---------------------------------------------------------------------
+Avg Review Score =
+AVERAGEX (
+    VALUES ( FactOrderItems[order_id] ),
+    CALCULATE ( MAX ( FactOrderItems[ReviewScore] ) )
+)
+
+Negative Review % =
+VAR _orders =
+    ADDCOLUMNS (
+        VALUES ( FactOrderItems[order_id] ),
+        "@score", CALCULATE ( MAX ( FactOrderItems[ReviewScore] ) )
+    )
+RETURN
+    DIVIDE (
+        COUNTROWS ( FILTER ( _orders, NOT ISBLANK ( [@score] ) && [@score] <= 2 ) ),
+        COUNTROWS ( FILTER ( _orders, NOT ISBLANK ( [@score] ) ) )
+    )
+
+Delivered Orders =
+CALCULATE ( [Total Orders], FactOrderItems[order_status] = "delivered" )
+
+Avg Delivery Days =
+CALCULATE (
+    AVERAGEX ( VALUES ( FactOrderItems[order_id] ), CALCULATE ( MAX ( FactOrderItems[DeliveryDays] ) ) ),
+    FactOrderItems[order_status] = "delivered"
+)
+
+On-Time Delivery % =
+CALCULATE (
+    AVERAGEX ( VALUES ( FactOrderItems[order_id] ), CALCULATE ( MAX ( FactOrderItems[IsOnTime] ) ) ),
+    FactOrderItems[order_status] = "delivered"
+)
+
+// From FactOrders — includes the canceled/unavailable orders that
+// were removed from FactOrderItems
+Cancellation Rate % =
+DIVIDE (
+    CALCULATE ( COUNTROWS ( FactOrders ), FactOrders[IsValid] = FALSE () ),
+    COUNTROWS ( FactOrders )
+)
+
+
+// ---------------------------------------------------------------------
+//  4. TIME INTELLIGENCE   [4 Time]
+//  Data ends 31 Aug 2018, so "2018" = Jan–Aug and SAMEPERIODLASTYEAR
+//  automatically compares against Jan–Aug 2017 (like-for-like).
+// ---------------------------------------------------------------------
+Revenue LY =
+CALCULATE ( [Revenue], SAMEPERIODLASTYEAR ( DimDate[Date] ) )
+
+Revenue YoY % =
+IF ( NOT ISBLANK ( [Revenue LY] ), DIVIDE ( [Revenue] - [Revenue LY], [Revenue LY] ) )
+
+Revenue PM =
+CALCULATE ( [Revenue], DATEADD ( DimDate[Date], -1, MONTH ) )
+
+Revenue MoM % =
+IF ( NOT ISBLANK ( [Revenue PM] ), DIVIDE ( [Revenue] - [Revenue PM], [Revenue PM] ) )
+
+Revenue YTD =
+TOTALYTD ( [Revenue], DimDate[Date] )
+
+Revenue LY YTD =
+CALCULATE ( [Revenue YTD], SAMEPERIODLASTYEAR ( DimDate[Date] ) )
+
+Orders LY =
+CALCULATE ( [Total Orders], SAMEPERIODLASTYEAR ( DimDate[Date] ) )
+
+Orders YoY % =
+IF ( NOT ISBLANK ( [Orders LY] ), DIVIDE ( [Total Orders] - [Orders LY], [Orders LY] ) )
+
+Customers YoY % =
+VAR _ly = CALCULATE ( [Active Customers], SAMEPERIODLASTYEAR ( DimDate[Date] ) )
+RETURN IF ( NOT ISBLANK ( _ly ), DIVIDE ( [Active Customers] - _ly, _ly ) )
+
+Revenue 3M Rolling Avg =
+DIVIDE (
+    CALCULATE ( [Revenue], DATESINPERIOD ( DimDate[Date], MAX ( DimDate[Date] ), -3, MONTH ) ),
+    3
+)
+
+
+// ---------------------------------------------------------------------
+//  5. TARGETS   [5 Target]
+//  Olist publishes no targets, so we model a common real-world method:
+//    Monthly target = avg revenue of the previous 3 months × (1 + growth)
+//  Growth comes from a What-if parameter:
+//    Modeling → New parameter → Numeric range
+//    Name "Target Growth", 0 to 0.30, increment 0.01, default 0.05
+//  → creates 'Target Growth'[Target Growth Value] + a slider.
+//  Targets start Apr 2017 (first month with 3 full months of history).
+//  Works by state / category / seller too — each gets its own run-rate.
+// ---------------------------------------------------------------------
+Sales Target =
+SUMX (
+    VALUES ( DimDate[MonthStart] ),
+    VAR _m = DimDate[MonthStart]
+    VAR _base =
+        CALCULATE ( [Revenue], DATESINPERIOD ( DimDate[Date], _m - 1, -3, MONTH ) ) / 3
+    RETURN
+        IF ( _m >= DATE ( 2017, 4, 1 ), _base * ( 1 + [Target Growth Value] ) )
+)
+
+// Revenue only for months that have a target (so 2017 compares Apr–Dec)
+Revenue (Targeted Months) =
+SUMX (
+    VALUES ( DimDate[MonthStart] ),
+    IF ( DimDate[MonthStart] >= DATE ( 2017, 4, 1 ), [Revenue] )
+)
+
+Target Achievement % =
+DIVIDE ( [Revenue (Targeted Months)], [Sales Target] )
+
+Target Variance =
+[Revenue (Targeted Months)] - [Sales Target]
+
+Months Target Hit =
+SUMX (
+    VALUES ( DimDate[MonthStart] ),
+    IF ( NOT ISBLANK ( [Sales Target] ) && [Revenue] >= [Sales Target], 1, 0 )
+)
+
+Months With Target =
+SUMX ( VALUES ( DimDate[MonthStart] ), IF ( NOT ISBLANK ( [Sales Target] ), 1, 0 ) )
+
+// Conditional formatting → Background colour → Format style: Field value
+KPI Status Colour =
+SWITCH (
+    TRUE (),
+    ISBLANK ( [Target Achievement %] ), BLANK (),
+    [Target Achievement %] >= 1, "#2E7D32",
+    [Target Achievement %] >= 0.9, "#F9A825",
+    "#C62828"
+)
+
+KPI Status =
+SWITCH (
+    TRUE (),
+    ISBLANK ( [Target Achievement %] ), BLANK (),
+    [Target Achievement %] >= 1, "▲ On target",
+    [Target Achievement %] >= 0.9, "● Near target",
+    "▼ Behind target"
+)
+
+
+// ---------------------------------------------------------------------
+//  6. RANKING & SHARE   [6 Ranking]
+// ---------------------------------------------------------------------
+Seller Rank =
+IF (
+    HASONEVALUE ( DimSeller[SellerCode] ),
+    RANKX ( ALLSELECTED ( DimSeller ), [Revenue], , DESC, DENSE )   // whole table → state column in visual doesn't reset rank
+)
+
+Category Rank =
+IF (
+    HASONEVALUE ( DimProduct[Category] ),
+    RANKX ( ALLSELECTED ( DimProduct[Category] ), [Revenue], , DESC, DENSE )
+)
+
+% of Total Revenue =
+DIVIDE ( [Revenue], CALCULATE ( [Revenue], ALLSELECTED () ) )
+
+// Top-20% sellers' share of revenue (Pareto check)
+Top 20% Seller Revenue Share =
+VAR _sellers =
+    ADDCOLUMNS ( VALUES ( DimSeller[seller_id] ), "@rev", [Revenue] )
+VAR _active = FILTER ( _sellers, NOT ISBLANK ( [@rev] ) )
+VAR _topN = ROUNDUP ( COUNTROWS ( _active ) * 0.2, 0 )
+VAR _top = TOPN ( _topN, _active, [@rev], DESC )
+RETURN
+    DIVIDE ( SUMX ( _top, [@rev] ), SUMX ( _active, [@rev] ) )
+
+
+// ---------------------------------------------------------------------
+//  7. LABELS   [7 Labels]  (Format → Title → fx → Field value)
+// ---------------------------------------------------------------------
+Title Overview =
+"Olist Sales Performance — "
+    & IF ( HASONEVALUE ( DimDate[Year] ), VALUES ( DimDate[Year] ), "Jan 2017 – Aug 2018" )
+    & IF ( HASONEVALUE ( DimState[Region] ), " | " & VALUES ( DimState[Region] ), "" )
+
+Subtitle YoY =
+VAR _y = [Revenue YoY %]
+RETURN
+    IF (
+        ISBLANK ( _y ),
+        "No prior-year data",
+        IF ( _y >= 0, "▲ ", "▼ " ) & FORMAT ( ABS ( _y ), "0.0%" ) & " revenue vs same period last year"
+    )
+
+
+// ---------------------------------------------------------------------
+//  8. ADDED WHILE BUILDING   [8 Visual helpers]
+// ---------------------------------------------------------------------
+// Calculated COLUMN on FactOrderItems (Table view → New column)
+Delivery Status =
+SWITCH (
+    TRUE (),
+    ISBLANK ( FactOrderItems[IsOnTime] ), "Not delivered",
+    FactOrderItems[IsOnTime] = 1, "On time",
+    "Late"
+)
+
+Avg Review On-Time =
+CALCULATE ( [Avg Review Score], FactOrderItems[Delivery Status] = "On time" )
+
+Avg Review Late =
+CALCULATE ( [Avg Review Score], FactOrderItems[Delivery Status] = "Late" )
+
+Late Orders =
+CALCULATE ( [Total Orders], FactOrderItems[Delivery Status] = "Late" )
+
+// Separate field so the table can show a bar-only column next to the number
+Revenue Bar = [Revenue]
+
+// Column colour on the Revenue vs Target chart
+Bar Colour =
+IF ( [Revenue] >= [Sales Target], "#378ADD", "#B5D4F4" )
+
+// YoY sub-label under the Revenue card (only when one year is selected)
+Revenue YoY Label =
+VAR _y = [Revenue YoY %]
+RETURN
+    IF (
+        NOT HASONEVALUE ( DimDate[Year] ) || ISBLANK ( _y ),
+        "vs last year: n/a",
+        IF ( _y >= 0, "▲ +", "▼ -" ) & FORMAT ( ABS ( _y ), "0.0%" ) & " YoY"
+    )
+
+Revenue YoY Colour =
+VAR _y = [Revenue YoY %]
+RETURN
+    SWITCH (
+        TRUE (),
+        NOT HASONEVALUE ( DimDate[Year] ) || ISBLANK ( _y ), "#888780",
+        _y >= 0, "#2E7D32",
+        "#C62828"
+    )
