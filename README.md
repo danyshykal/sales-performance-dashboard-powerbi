@@ -1,16 +1,16 @@
-# 📊 Sales Performance Dashboard — Power BI
+#  Sales Performance Dashboard — Power BI
 
 An interactive 4-page Power BI dashboard analysing **~98,000 real e-commerce orders** from **Olist**, Brazil's largest department-store marketplace (Jan 2017 – Aug 2018). It tracks revenue KPIs, target achievement, seller performance and customer experience.
 
 ![Executive Overview](screenshots/01_overview.png)
 
-## 🎯 Business Questions
+##  Business Questions
 1. How fast is the business growing, and is it hitting its monthly targets?
 2. Which regions, states and product categories drive revenue?
 3. Who are the top sellers, and do they keep service quality high?
 4. How does delivery performance affect customer satisfaction?
 
-## 💡 Key Insights (2018, Jan–Aug)
+##  Key Insights (2018, Jan–Aug)
 
 **1. Growth is strong year-on-year but stalled in mid-2018.**
 Revenue grew **+138%** versus Jan–Aug 2017, but monthly revenue plateaued at around R$0.85–0.99M. Only **4 of 8 months** hit target (96.4% overall achievement), and **all five regions missed target in June**. This points to a company-wide slowdown, not a regional problem.
@@ -35,7 +35,7 @@ The repeat-customer rate is just **2.1%** in 2018. Growth is coming almost entir
 **6. Category performance is mixed.**
 Health & Beauty (109%) and Housewares (114%) beat their targets, while Toys (66%) and Cool Stuff (77%) fell furthest behind.
 
-## 📑 Report Pages
+##  Report Pages
 | Executive Overview | Target vs Actual |
 |---|---|
 | ![](screenshots/01_overview.png) | ![](screenshots/02_target.png) |
@@ -47,7 +47,7 @@ Health & Beauty (109%) and Housewares (114%) beat their targets, while Toys (66%
 - **Seller Performance**: top-10 leaderboard with service-quality flags, volume-vs-quality scatter, seller concentration.
 - **Customer Experience**: review score by delivery status, monthly on-time trend, slowest states, delivery-vs-review by state.
 
-## 🛠️ Skills Demonstrated
+##  Skills Demonstrated
 | Area | What I did |
 |---|---|
 | **Power Query (M)** | Cleaned 7 raw tables: translated categories, handled missing values and duplicate reviews, de-duplicated customers, set a date window, used staging queries and a folder parameter |
@@ -56,7 +56,7 @@ Health & Beauty (109%) and Housewares (114%) beat their targets, while Toys (66%
 | **KPI Design** | Revenue, AOV, Target Achievement %, On-Time Delivery %, Avg Review Score, Negative Review %, Repeat Customer Rate, with red/amber/green status |
 | **Visualisation** | 4 report pages, combo charts, matrix heatmap, scatter quadrants with average lines, data bars, synced slicers |
 
-## 📐 Data Model
+##  Data Model
 ![Model](docs/model.png)
 
 | Table | Rows | Grain |
@@ -68,7 +68,7 @@ Health & Beauty (109%) and Housewares (114%) beat their targets, while Toys (66%
 | DimState | 27 | Brazilian state → region |
 | DimDate | 608 | DAX calendar |
 
-## 📏 KPI Definitions
+##  KPI Definitions
 | KPI | Definition |
 |---|---|
 | Revenue | Σ item price, excluding freight, canceled and unavailable orders |
@@ -80,7 +80,7 @@ Health & Beauty (109%) and Housewares (114%) beat their targets, while Toys (66%
 | Negative Review % | Share of reviewed orders scored 1–2★ |
 | Repeat Customer Rate | Customers (`customer_unique_id`) with 2 or more orders |
 
-## 🧹 Data Preparation Decisions
+##  Data Preparation Decisions
 - **Date window Jan 2017 – Aug 2018.** Late 2016 (ramp-up, ~330 orders) and Sep–Oct 2018 (data cut-off, 20 orders) were excluded so they don't distort trends and YoY. Because the window ends in August, "2018" means Jan–Aug and is compared like-for-like against Jan–Aug 2017.
 - **Revenue from order items, not payments.** Payments have several rows per order (vouchers, instalments) and would double-count.
 - **`customer_unique_id` used for customers.** Olist creates a new `customer_id` for every order, so counting it would overstate customers and make the repeat rate look like 0%.
@@ -89,7 +89,7 @@ Health & Beauty (109%) and Housewares (114%) beat their targets, while Toys (66%
 - **Targets:** Olist doesn't publish targets, so a run-rate target method was modelled and documented.
 - **Seller analysis** uses sellers with 30+ orders, so averages aren't skewed by sellers with a handful of orders.
 
-## 📁 Repo Structure
+##  Repo Structure
 ```
 ├── Sales_Performance_Dashboard.pbix
 ├── data/DimState.csv        # state → region lookup (Olist CSVs: download from Kaggle)
@@ -99,13 +99,13 @@ Health & Beauty (109%) and Housewares (114%) beat their targets, while Toys (66%
 └── screenshots/
 ```
 
-## ▶️ How to Open
+##  How to Open
 1. Download the dataset from Kaggle (link below) and unzip it into `data/`.
 2. Open `Sales_Performance_Dashboard.pbix` in Power BI Desktop.
 3. Home → Transform data → **Edit parameters** → set `DataFolder` to your `data\` folder path (with a trailing `\`) → Refresh.
 
-## 📚 Data Source
+##  Data Source
 [Brazilian E-Commerce Public Dataset by Olist](https://www.kaggle.com/datasets/olistbr/brazilian-ecommerce) — real, anonymised commercial data released by Olist under CC BY-NC-SA 4.0.
 
 ---
-**Danysh** · B.CS (Hons.) Data Science, Multimedia University · [LinkedIn](#) · [GitHub](#)
+**Danysh** · B.CS (Hons.) Data Science, Multimedia University · [LinkedIn](https://www.linkedin.com/in/muhammad-danysh-hykal-9213581b7/) · [GitHub](https://github.com/danyshykal)
